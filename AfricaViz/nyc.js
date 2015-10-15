@@ -1,3 +1,5 @@
+var polygon = require('polygon');
+
 
 var scene, camera, renderer,orbitControls, nyc,ambig = {}, unambig = {};
 var conLines = new THREE.Object3D();
@@ -112,16 +114,23 @@ function buildAsShapes(){
 
     /*var flatPoints = flattenData([pollygons]);
     var testTriangles = earcut(flatPoints.vertices);
+    */
 
-    trianglePoints = []
-    for(var poly = 0; poly < testTriangles.length; poly += 2 ){
-      var curvect = new THREE.Vector2(current[poly],current[poly + 1]);
-      trianglePoints.push(curvect);
-    }*/
-
+    if(place.Name == "Madagascar"){
+      console.log("stopHere")
+    }
+    var p = new polygon(pollygons);
+    var noIntersecs = p.pruneSelfIntersections();
+    var ofInterest = noIntersecs[0].dedupe().points
+    cleanedPoints = []
+    for( var poly = 0; poly < ofInterest.length; poly++){
+      current = ofInterest[poly];
+      var curvect = new THREE.Vector2(current.x,current.y);
+      cleanedPoints.push(curvect);
+    }
 
     // create the shape and push it into the city
-    var placeShape = new THREE.Shape(placePoints);
+    var placeShape = new THREE.Shape(cleanedPoints);
 
     // create 3d geometry
     var geometry = new THREE.ExtrudeGeometry( placeShape, extrudeSettings );
