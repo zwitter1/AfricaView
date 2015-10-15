@@ -1,15 +1,16 @@
 var polygon = require('polygon');
+var hbas={}, g6pd={}, duffy={};
+var currentMalaria = {};
 
 
 var scene, camera, renderer,orbitControls, nyc,ambig = {}, unambig = {};
 var conLines = new THREE.Object3D();
 
 
-loadpolys(/*loadTransmissions*/initScene)
+loadpolys(loadTransmissions/*initScene*/)
 //loadpolys()
 //loadTransmissions()
 //initScene()
-var extrudeSettings = { amount: 8, bevelEnabled: true, bevelSegments: 2, steps: 2, bevelSize: 1, bevelThickness: 1 };
 
 
 function initScene(){
@@ -29,8 +30,8 @@ function initScene(){
   scene.add(conLines);
 
   var light = new THREE.AmbientLight( 0xbbbbbb ); // soft white light 404040
-  var spotLight = new THREE.SpotLight( 0x0a45ff );
-  spotLight.position.set( 0, 100, 20 );
+  var spotLight = new THREE.SpotLight( 0x585858);
+  spotLight.position.set( 0, 0, 600 );
 
   spotLight.castShadow = true;
   //scene.add(new axis(160))
@@ -116,29 +117,69 @@ function buildAsShapes(){
     var testTriangles = earcut(flatPoints.vertices);
     */
 
-    if(place.Name == "Madagascar"){
+    if(place.Name == "Mozambique"){
       console.log("stopHere")
     }
     var p = new polygon(pollygons);
-    var noIntersecs = p.pruneSelfIntersections();
-    var ofInterest = noIntersecs[0].dedupe().points
-    cleanedPoints = []
-    for( var poly = 0; poly < ofInterest.length; poly++){
-      current = ofInterest[poly];
-      var curvect = new THREE.Vector2(current.x,current.y);
-      cleanedPoints.push(curvect);
+    var noDups = p.dedupe()
+    var pruned = noDups.pruneSelfIntersections();
+    // calculate number of points in prunded
+    var totLength = 0;
+    for(prun = 0; prun < pruned.length; prun++){
+      totLength += pruned[prun].points.length;
+    }
+    var noIntersecs;
+    if(totLength < (noDups.length)){
+      noIntersecs = [noDups];
+    }
+    else{
+      noIntersecs = pruned;
     }
 
-    // create the shape and push it into the city
-    var placeShape = new THREE.Shape(cleanedPoints);
+    var grayColor = genGrayScale();
 
-    // create 3d geometry
-    var geometry = new THREE.ExtrudeGeometry( placeShape, extrudeSettings );
-    // maybe be sure this is a random color
-    var ranColor = "#"+((1<<24)*Math.random()|0).toString(16);
-		var placeMesh = new THREE.Mesh( geometry, new THREE.MeshBasicMaterial( { color:genGrayScale()/*, emissiveMap:genGrayScale*/ } ) );
-    placeMesh.placeId = allKeys[i]
-    placeMesh.midPoint = midPoint;
+
+    var placeObj = new THREE.Object3D();
+
+    for (var j = 0; j < noIntersecs.length; j++){
+      var ofInterest = noIntersecs[j].points
+      if(ofInterest.length > 2){
+        cleanedPoints = []
+        for( var poly = 0; poly < ofInterest.length; poly++){
+          current = ofInterest[poly];
+          var curvect = new THREE.Vector2(current.x,current.y);
+          cleanedPoints.push(curvect);
+        }
+
+
+        var extrusion = .5
+        if (place.Name in currentMalaria){
+          extrusion = currentMalaria[place.Name];
+          var ratio = Math.round(255 - ((extrusion*254)/ currentMalaria.max)) ;
+          grayColor = "#ff" + ratio.toString(16) + ratio.toString(16);
+
+          if (grayColor.length < 7){
+            grayColor = grayColor + "00";
+          }
+
+        }
+        extrusion = Math.sqrt(extrusion * 8);
+
+        var extrudeSettings = { amount: extrusion, bevelEnabled: true, bevelSegments: 2, steps: 2, bevelSize: 1, bevelThickness: 1 };
+
+        // create the shape and push it into the city
+        var placeShape = new THREE.Shape(cleanedPoints);
+        // create 3d geometry
+        var geometry = new THREE.ExtrudeGeometry( placeShape, extrudeSettings );
+        // maybe be sure this is a random color
+    		var placeMesh = new THREE.Mesh( geometry, new THREE.MeshPhongMaterial( { color:grayColor/*, emissiveMap:genGrayScale*/ } ) );
+        placeObj.add(placeMesh)
+    }
+    }
+
+
+    placeObj.placeId = allKeys[i]
+    placeObj.midPoint = midPoint;
 
     // throw midpoint onto map to view validity
     /*
@@ -153,8 +194,8 @@ function buildAsShapes(){
     lineGeo.vertices.push(threeDVec, threeDVec2);
     var midline = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({color:0x0000ff}));
     scene.add(midline);*/
-    place.obj = placeMesh;
-		city.add( placeMesh );
+    place.obj = placeObj;
+		city.add( placeObj );
   }
   scene.add(city);
 }
@@ -272,56 +313,79 @@ function loadpolys(callback){
 
 
 
-// test
-function flattenData(data) {
-    var dim = data[0][0].length,
-        result = {vertices: [], holes: [], dimensions: dim},
-        holeIndex = 0;
 
-    for (var i = 0; i < data.length; i++) {
-        for (var j = 0; j < data[i].length; j++) {
-            for (var d = 0; d < dim; d++) result.vertices.push(data[i][j][d]);
-        }
-        if (i > 0) {
-            holeIndex += data[i - 1].length;
-            result.holes.push(holeIndex);
-        }
-    }
-
-    return result;
-}
-
-
-
-
-
+// interested in the 7th position.
 function loadTransmissions(callback){
-  console.log("loading transmissions")
-  $.get( "../sample.log", function( data ) {
+  console.log("loading transmissions");
+  $.get( "../malariaAfrica/G6PDAfrica.csv", function( data ) {
     var inData = data;
-    var transmissions= inData.split("\n")
-    for(var i = 0; i < transmissions.length; i++){
-      var currentLine= transmissions[i];
-      if(currentLine.indexOf(" --> ") > -1){
-        var tofrom = currentLine.split(" --> ");
-        if(tofrom[0] in ambig){
-          ambig[tofrom[0]].push(tofrom[1]);
-        }
-        else{
-          ambig[tofrom[0]] = [tofrom[1]];
-        }
+    var malData= inData.split("\n")
+    var first = true;
+    var highest = 0;
+    for(var i = 0; i < malData.length; i++){
+      if(first){first = false; continue;}
+      var country = malData[i].split(",")[7];
+      var count =  parseInt(malData[i].split(",")[15]);
+
+      if(count > highest){
+        highest = count;
       }
-      else if (currentLine.indexOf(" ==> ") > -1) {
-        var tofrom = currentLine.split(" ==> ");
-        if(tofrom[0] in unambig){
-          unambig[tofrom[0]].push(tofrom[1]);
-        }
-        else{
-          unambig[tofrom[0]] = [tofrom[1]];
-        }
+
+      if (!(country in g6pd)){
+        g6pd[country] = count;
       }
     }
-    console.log("finished loading transmissions");
+    g6pd.max = highest;
+    currentMalaria = g6pd;
     initScene();
   });
+
+
+
+  $.get( "../malariaAfrica/hbasAfrica.csv", function( data ) {
+    var inData = data;
+    var malData= inData.split("\n")
+    var first = true;
+    var highest = 0;
+    for(var i = 0; i < malData.length; i++){
+      if(first){first = false; continue;}
+      var country = malData[i].split(",")[7];
+      var count =  malData[i].split(",")[15];
+
+      if(count > highest){
+        highest = count;
+      }
+      if (!(country in hbas)){
+        hbas[country] = count;
+      }
+    }
+    hbas.max = highest;
+    currentMalaria = hbas;
+  });
+
+
+
+  $.get( "../malariaAfrica/duffyAfrica.csv", function( data ) {
+    var inData = data;
+    var malData= inData.split("\n")
+    var first = true;
+    var highest = 0;
+    for(var i = 0; i < malData.length; i++){
+      if(first){first = false; continue;}
+      var country = malData[i].split(",")[12];
+      var count =  malData[i].split(",")[20];
+      if(count > highest){
+        highest = count;
+      }
+      if (!(country in duffy)){
+        duffy[country] = count;
+      }
+    }
+    duffy.max = highest;
+
+    currentMalaria =duffy;
+    console.log("finished loading transmissions");
+  });
+
+
 };
